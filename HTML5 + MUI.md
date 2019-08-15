@@ -6,6 +6,8 @@
 
 - **工具**：HBuilder X  +  夜神模拟器
 
+- 真机开发：安卓版本需要点击多次系统版本 + 打开开发者选项 + 打开USB调试 + USB安装允许
+
 - 搭建一个小Demo
 
   ![1565700353251](C:\Users\RootUser\Desktop\知识点复习\Django\gif\1565700353251.png)
@@ -622,4 +624,31 @@
 - 实现效果
 
   ![1565716474107](C:\Users\RootUser\Desktop\知识点复习\Django\gif\1565716474107.png)
+
+
+
+
+
+##### 错误事项：
+
+```js
+1、upload 后面没有/，否则后端一直抛错404
+function img_uploader(filePath){
+				var task = plus.uploader.createUpload("http://192.168.12.42:9527/upload",{},
+				function(t,status){
+					if (status==200) {
+						data_obj = JSON.parse(task.responseText);
+						document.getElementById("avatar").style.width="200px";
+						document.getElementById("avatar").style.height="200px";
+						document.getElementById("avatar").src = 'http://192.168.12.42:9527/get_avatar/'+ data_obj.filename
+					} else{
+						
+					}
+				})
+				task.addFile(filePath,{key:"avatar"})
+				task.start()
+			}
+
+2、
+```
 
