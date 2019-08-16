@@ -1,0 +1,120 @@
+<!doctype html>
+<html>
+
+	<head>
+		<meta charset="utf-8">
+		<title></title>
+		<meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no" />
+		<link href="css/mui.css" rel="stylesheet" />
+	</head>
+
+	<body>
+		<header class="mui-bar mui-bar-nav">
+			<h1 class="mui-title">成为我们的一员</h1>
+		</header>
+		<div class="mui-content">
+			<form class="mui-input-group">
+			    <div class="mui-input-row">
+			        <label>用户名</label>
+			    <input type="text" class="mui-input-clear" id='username' placeholder="请输入用户名">
+			    </div>
+			    <div class="mui-input-row">
+			        <label>密码</label>
+			        <input type="password" class="mui-input-password" id='pwd' placeholder="请输入密码">
+			    </div>
+				<div class="mui-input-row">
+				    <label>确认密码</label>
+				    <input type="password" class="mui-input-password" placeholder="请确认密码">
+				</div>
+				<div class="mui-input-row">
+				    <label>用户昵称</label>
+				    <input type="password" class="mui-input-password" id='nickname' placeholder="用户昵称">
+				</div>
+				<div class="mui-input-row">
+				    <label>头像</label>
+				</div>
+					<button type="button" class="mui-btn mui-btn-blue mui-btn-outlined" id='xj'>打开相机</button>
+					<button type="button" class="mui-btn mui-btn-blue mui-btn-outlined" id='xc'>打开相册</button>
+			    <div style="text-align:center;">
+			    	<img id='avatar'>
+			    </div>
+				<div class="mui-button-row">
+			        <button type="button" class="mui-btn mui-btn-primary" id ='reg'>Register</button>
+			        <button type="button" class="mui-btn mui-btn-danger" id='cancle' >Cancel</button>
+			    </div>
+				
+			</form>
+
+		</div>
+		<script src="js/mui.js"></script>
+		<script type="text/javascript">
+			mui.init();
+			var av =null;
+			document.getElementById('xj').addEventListener('tap',function () {
+			    var c = plus.camera.getCamera();
+				var fbl = c.supportedImageResolutions[0];
+				var gs = c.supportedImageFormats[0];
+				c.captureImage(function(s1){
+					//执行上传头像任务
+					img_uploader(s1)
+				},function(err){},{resolution:fbl,format:gs})
+			})
+			
+			function img_uploader(filePath){
+				var task = plus.uploader.createUpload(window.serv + "/upload",{},
+				function(t,status){
+					
+					if (status==200) {	
+						data_obj = JSON.parse(task.responseText);
+						document.getElementById("avatar").style.width="200px";
+						document.getElementById("avatar").style.height="200px";
+						document.getElementById("avatar").src = window.seravatar+ data_obj.filename
+						av = data_obj.filename
+					} else{
+						
+					}
+				})
+				task.addFile(filePath,{key:"avatar"})
+				task.start()
+			}
+			
+			document.getElementById('xc').addEventListener('tap', function() {
+				plus.gallery.pick(
+					function(s) {
+						img_uploader(s)
+					},
+					function(err) {}, {}
+				)
+			})
+			
+			document.getElementById('cancle').addEventListener('tap',function () {
+			    mui.back();   
+			})
+			
+			document.getElementById('reg').addEventListener('tap',function () {
+			    var username = document.getElementById("username").value;
+				var pwd = document.getElementById("pwd").value; 
+				var nickname = document.getElementById("nickname").value; 
+				var avatar = av;
+				user = {
+					username:username,
+					pwd:pwd,
+					nickname:nickname,
+					avatar:avatar
+				};
+				console.log('1')
+				mui.post("http://192.168.12.42:9527/reg",user,function(data){				
+
+						if (data.code == 0) {
+							mui.toast(data.msg)
+							mui.back(); // 返回上一页
+						} else {
+							mui.toast('注册失败')
+						}
+					},'json'
+				);
+			})
+		</script>
+	</body>
+
+</html>

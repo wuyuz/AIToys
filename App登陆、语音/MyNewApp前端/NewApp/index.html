@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<title>Document</title>
+		<meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no" />
+		<link rel="stylesheet" type="text/css" href="css/mui.css" />
+	</head>
+	<body>
+		<nav class="mui-bar mui-bar-tab">
+			<a class="mui-tab-item mui-active" id="home">
+				<span class="mui-icon mui-icon-home"></span>
+				<span class="mui-tab-label">首页</span>
+			</a>
+			<a class="mui-tab-item">
+				<span class="mui-icon mui-icon-chatbubble" id='message'></span>
+				<span class="mui-tab-label">消息</span>
+			</a>
+			<a class="mui-tab-item">
+				<span class="mui-icon mui-icon-email"></span>
+				<span class="mui-tab-label">邮件</span>
+			</a>
+			<a class="mui-tab-item" id='login_info'>
+				<span class="mui-icon mui-icon-person"></span>
+				<span class="mui-tab-label">我</span>
+			</a>
+		</nav>
+		<script src="js/mui.js" type="text/javascript" charset="utf-8"></script>
+		<script type="text/javascript">
+			mui.init({
+				subpages: [{
+					url: 'home.html',
+					id: 'home.html',
+					styles: {
+						top: "0px",
+						bottom: "50px",
+					},
+					extras: {}
+				}]
+			})
+			var user_data = null;
+			var ws_client = null;
+			mui.plusReady(function() {
+				if (plus.storage.getItem('user_id')) {
+
+					mui.post(window.serv + "/auto_login", {
+						user_id: plus.storage.getItem('user_id')
+					}, function(data) {
+						user_data = data
+						console.log(JSON.stringify(user_data))
+					}, 'json');
+				} else {
+
+				}
+				ws_client = new WebSocket("ws://192.168.12.42:9528/app_ws/app") //作为一个客户端连接websocket服务器
+
+			});
+
+			mui.back = function() { //覆盖返回页
+				mui.toast('已经是主页')
+			}
+
+			document.getElementById('home').addEventListener('tap', function() {
+				mui.openWindow({
+					url: 'home.html',
+					id: 'home.html',
+					styles: {
+						top: "0px",
+						bottom: "50px",
+					},
+				});
+			})
+
+			document.getElementById('login_info').addEventListener('tap', function() {
+				var is_login = plus.storage.getItem("user_id");
+				if (is_login) {
+					mui.openWindow({
+						url: 'user_info.html',
+						id: 'user_info.html',
+						styles: {
+							top: "0px",
+							bottom: "50px",
+						},
+						extras: user_data.data,
+					});
+				} else {
+					mui.openWindow({
+						url: 'login.html',
+						id: 'login.html',
+						styles: {
+							top: "0px",
+							bottom: "50px",
+						},
+					});
+				}
+			})
+
+			document.getElementById('message').addEventListener('tap', function() {
+				mui.openWindow({
+					url: "recoder.html",
+					id: "recoder.html",
+					styles: {
+						top: "0px",
+						bottom: "50px",
+					},
+				})
+			})
+
+			//监听fire事件
+			document.addEventListener('send_message', function(eventDate) {
+				var send_str = JSON.stringify(eventDate.detail);
+				ws_client.send(send_str);
+			})
+		</script>
+	</body>
+</html>

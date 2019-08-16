@@ -649,6 +649,5 @@ function img_uploader(filePath){
 				task.start()
 			}
 
-2、
 ```
 
