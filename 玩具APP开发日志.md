@@ -614,7 +614,6 @@
   import os
   from uuid import uuid4
   import requests # 爬虫课程
-  
   from Config import COVER_PATH, MUSIC_PATH, MongoDB
   
   header={
@@ -670,9 +669,9 @@
   # 优势 一次数据库操作 即可完成 全部内容添加
   # 劣势 在29个 断掉了 全部结束 Try Exception F
   ```
-
   
 
+  
 - 给后端提供content_list接口，使后端能接受到图片和音频数据名，前端再根据歌名来后端获取
 
   ```python
@@ -701,7 +700,7 @@
   
   ```
 
-- 前端向后端获取音频
+- 前端向后端获取音乐
 
   ```js
   function create_content(content){    //添加儿歌列表
@@ -732,6 +731,39 @@
           
           document.getElementById("content_list").appendChild(li);       
       }
+  ```
+
+- 后端生成的二维码，并将二维码存入数据库中
+
+  ```python
+  import os
+  import requests
+  from Config import LT_URL,QRCODE_PATH,MongoDB
+  from uuid import uuid4
+  import time, hashlib
+  
+  #创建二维码，设备编号字符串
+  
+  def create_qr(n):
+      device_list = []
+      for i in range(n):
+          DeviceKey = hashlib.md5(f"{uuid4()}{time.time()}{uuid4()}".encode('utf-8')).hexdigest()
+          res = requests.get(LT_URL%(DeviceKey))
+          qr_name = f"{DeviceKey}.jpg"
+          qr_file_path = os.path.join(QRCODE_PATH,qr_name)
+  
+          with open(qr_file_path,'wb') as f:
+              f.write(res.content)
+  
+          device_key = {
+              "device_key":DeviceKey
+          }
+  
+          device_list.append(device_key)
+      #存放在数据库中
+      MongoDB.devices.insert(device_list)
+  
+  create_qr(5)
   ```
 
 
@@ -833,19 +865,7 @@
       return jsonify(RET)
   ```
 
-- 扫描通过，且没有注册过的设备，将填写设备名称、爸爸名字等，像后端触发bind_toy接口，后端将数据保存到MongoDB中
-
-  ```python
-  @user.route('/bind_toy', methods=['POST'])
-  def bind_toy():
-      toy_info = request.form.to_dict()
-      toy_info['avatar'] = 'toy.jpg',
-      toy_info['gender'] = 1,
-      MongoDB.device.insert_one(toy_info)
-      RET['msg'] = '绑定成功'
   
-      return jsonify(RET)
-  ```
 
 - 通过后，前端自动获取toy_list接口
 
@@ -874,3 +894,267 @@
   ```
 
   
+
+#### 绑定玩具信息
+
+- 后端需要实现的接口：用于APP绑定设备，并创建Toy信息
+
+  URL地址:	 /bind_toy
+  请求方式:	POST
+  请求协议:
+
+  ```
+  JSON:
+  {
+      "toy_name":toy_name, //toy名称
+      "baby_name":baby_name, //toy所属主人名称
+      "remark":remark, //toy主人对App用户的称呼
+      "user_id":user_id,//绑定Toy的App用户Id
+      "device_key":device_key, //设备唯一编码device_key
+  }
+  ```
+
+  响应数据
+
+  ```
+  JSON:
+  {
+  	"code":0,
+  	"msg":"绑定完成",
+  	"data":{}
+  }
+  ```
+
+- 分析：相应的当APP扫描通过了，就会让用户填写玩具信息，发给后端，让后端存储信息，但是有个很难的点是，怎么存储toy表，我们查看toy的存储的数据结构文档
+
+  ```json
+  toys表：
+  {
+  	"_id" : ObjectId("5ca17f85ea512d215cd9b079"), // 自动生成ID
+  	"toy_name" : "小粪球儿", // 玩具的昵称
+  	"baby_name" : "圆圆", // 玩具主人的昵称
+  	"device_key" : "afc59916257ae8a2b6ccdfb9fd273373", // 玩具的设备编号
+  	"avatar" : "toy.jpg", // 玩具的头像固定值 "toy.jpg"
+  	"bind_user" : "5c9d8da3ea512d2048826260", // 玩具的绑定用户
+  	"friend_list" : [ // 玩具通讯录信息 
+  		{ // 与Users数据表 friend_list 结构相同
+  			"friend_id" : "5c9d8da3ea512d2048826260",
+  			"friend_nick" : "DragonFire",
+  			"friend_remark" : "爸爸",
+  			"friend_avatar" : "baba.jpg",
+  			"friend_chat" : "5ca17f85ea512d215cd9b078",
+  			"friend_type" : "app"
+  		},
+  		{
+  			"friend_id" : "5ca17c7aea512d26281bcb8d",
+  			"friend_nick" : "臭屎蛋儿",
+  			"friend_remark" : "蛋蛋的忧伤",
+  			"friend_avatar" : "toy.jpg",
+  			"friend_chat" : "5ca5e789ea512d2e544da015",
+  			"friend_type" : "toy"
+  		}
+  	]
+  }
+  ```
+
+  - 关键点：
+
+    ```
+    1、通过user_id使用户绑定相应的用户id
+    2、friend_list 字段toys和users都有，这样就可以双方进行绑定，通过friend_id和friend_type进行区分
+    3、主要是friend_chat，用户和toy，或则toy和toy之间的聊天窗口，在数据库中存在chat表，每条记录生成一个聊天窗口，记录双方的聊天窗口，但是当我们要存储toy的时候，此时的阿chat记录并没有生成，所以我们需要在每次存储toy玩具的之前，就要创建一个空chat对象
+    ```
+
+- 后端接口代码
+
+  ```python
+  @devices.route('/bind_toy', methods=['POST'])
+  def bind_toy():
+      toy_info = request.form.to_dict()
+      user_id = toy_info.pop('user_id') # 找出用户id
+      user_info = MongoDB.users.find_one({'_id':ObjectId(user_id)}) #通过用户id找出用户信息
+  
+      chat_window = MongoDB.chats.insert_one({'user_list':[],'chat_list':[]})
+      chat_id = str(chat_window.inserted_id)  # 获取插入的数据的object_id
+  
+      # 创建toy在friendlist的名片
+      toy_add_user = {
+          'friend_id': user_id,
+          'friend_nick':user_info.get('username'),  # 绑定的是用户的信息
+          'friend_remark':toy_info.get('remark'),
+          'friend_avatar':user_info.get('avatar'),
+          'friend_chat':chat_id,
+          'friend_type':'app',
+      }
+      if not toy_info.get('friend_list'):
+          toy_info['friend_list'] = []
+  
+      toy_info['friend_list'].append(toy_add_user)
+      toy_info['bind_user'] = user_id
+      toy_info['avatar'] = 'toy.jpg'
+  
+      # 创建玩具
+      toy = MongoDB.toys.insert_one(toy_info)
+      toy_id = str(toy.inserted_id)
+  
+  
+      user_info['bind_toys'].append(toy_id)
+  
+      # 创建user在friend_list的名片
+      user_add_toy = {
+          "friend_id":toy_id,
+          'friend_nick':toy_info.get('toy_name'),
+          'friend_remark':toy_info.get('baby_name'),
+          'friend_avatar':toy_info.get('avatar'),
+          'friend_chat':chat_id,
+          'friend_type':'toy',
+      }
+  
+      user_info['friend_list'].append(user_add_toy)
+  
+      # 更新user
+      MongoDB.users.update_one({'_id':ObjectId(user_id)},{'$set':user_info})
+  
+       #聊天窗口
+      MongoDB.chats.update_one({'_id':ObjectId(chat_id)},{'$set':{'user_list':[toy_id,user_id]}})
+  
+      RET['CODE'] = 0
+      RET['MSG'] = '绑定完成'
+      RET['DATA'] = {}
+  
+      return jsonify(RET)
+  ```
+
+  
+
+#### APP向玩具建立长连接，发送music
+
+- 使用websocket接受连接的客户端（APP、玩具），在其中进行消息的转发
+
+  ```python
+  import json
+  from flask import Flask,request
+  from geventwebsocket.handler import WebSocketHandler
+  from geventwebsocket.server import WSGIServer
+  from geventwebsocket.websocket import WebSocket
+  
+  ws_app = Flask(__name__)
+  
+  user_socket_dict = {}
+  
+  @ws_app.route('/toy/<toy_id>')
+  def find_toy(toy_id):
+      web_toy = request.environ.get('wsgi.websocket')  #type:WebSocket
+  
+      if web_toy:
+          user_socket_dict[toy_id] = web_toy
+  
+      while 1:
+          print(user_socket_dict)
+          user_msg = web_toy.receive()
+          print(user_msg)
+          user_msg_dict = json.loads(user_msg)
+          to_user = user_msg_dict.get('to_user')
+          reveiver = user_socket_dict.get(to_user)
+          reveiver.send(user_msg)
+  
+  
+  @ws_app.route('/app/<app_id>')
+  def find_app(app_id):
+      web_app = request.environ.get('wsgi.websocket')  #type:WebSocket
+      # print(web_app)
+      if web_app:
+          user_socket_dict[app_id] = web_app
+  
+      while 1:
+          print(user_socket_dict)
+          user_msg = web_app.receive()
+          print(user_msg)
+          user_msg_dict = json.loads(user_msg)
+          to_user = user_msg_dict.get('to_user') #APP始终会发送to_user,表示jie'shou'z
+          reveiver = user_socket_dict.get(to_user)
+          reveiver.send(user_msg)
+  
+  
+  if __name__ == '__main__':
+      http_serv = WSGIServer(('0.0.0.0',9528),ws_app,handler_class=WebSocketHandler)
+      http_serv.serve_forever()
+  
+  #5faa4351b2c8770c725069cc7d1b716d
+  ```
+
+- 在Flask后端需要写toy_open接口，用于玩具端输入设备好后，玩具开机
+
+  ```python
+  @devices.route('/open_toy', methods=['post'])
+  def toy_open():
+      device_key = request.form.to_dict()
+  
+      device_toy = MongoDB.toys.find_one(device_key)
+      device = MongoDB.devices.find_one(device_key)
+      # print(device,device_toy,device_key)
+  
+      RET = {}
+      if device_toy: # 正在使用的设备
+          RET['code'] = 0
+          RET['music'] = '182aa2e6-7c5b-45e8-9cc3-59fb3d59df29.mp3'
+          RET['toy_id'] = str(device_toy['_id'])
+          RET['name'] = device_toy['toy_name']
+          return jsonify(RET)
+  
+      elif device:  # 未绑定的设备
+          RET['code'] = 2
+          RET['music'] = '601aa642-94a2-4e30-952c-13fbf14b0735.mp3'
+          return jsonify(RET)
+  
+      else:  #  没有绑定的设备，且没有使用的
+          RET['code'] = 1
+          RET['music'] = '1045b0f3-06ea-4483-8401-f08661c572fc.mp3'
+          return jsonify(RET)
+  
+  ```
+
+- 玩具端的web.html模拟
+
+  ```js
+   function open_toy() {
+          var device_key = document.getElementById("device_key").value;
+          $.post(
+              "http://127.0.0.1:9527/open_toy",
+              {device_key: device_key},
+              function (data) {
+                  console.log(data);
+                  if (data.code == 0) {
+                      console.log(111)
+                      document.getElementById("title").innerText = data.name;
+                      toy_id = data.toy_id;
+                      create_ws(toy_id);
+                  }
+                  document.getElementById("player").src = "http://127.0.0.1:9527/get_music/" + data.music;
+              },
+              "json"
+          );
+      }
+  
+  
+      function create_ws(toy_id) {
+          ws = new WebSocket("ws://127.0.0.1:9528/toy/" + toy_id); // 456
+          ws.onmessage = function (eventMessage) { //456.onmessage
+              var recv_msg = JSON.parse(eventMessage.data);
+              console.log(recv_msg);
+              if (recv_msg.music) {
+                  document.getElementById("player").src = "http://127.0.0.1:9527/get_music/" + recv_msg.music;
+              } else {
+                  document.getElementById("from_user").innerText = recv_msg.from_user;
+                  document.getElementById("from_user_type").innerText = recv_msg.friend_type;
+                  document.getElementById("player").src = "http://127.0.0.1:9527/get_chat/" + recv_msg.chat;
+              }
+          };
+          ws.onclose = function () {
+              create_ws(toy_id);
+          };
+      }
+  ```
+
+  ![1566184310086](C:\Users\RootUser\Desktop\知识点复习\Django\gif\1566184310086.png)
+
